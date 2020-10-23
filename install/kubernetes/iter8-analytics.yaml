@@ -25,8 +25,7 @@ data:
         password: 
         token: 
         type: none
-        username: 
-
+        username:
 ---
 # Source: iter8-analytics/templates/service.yaml
 apiVersion: v1
@@ -45,7 +44,6 @@ spec:
       targetPort: 8080
       protocol: TCP
       name: http
-
 ---
 # Source: iter8-analytics/templates/deployment.yaml
 apiVersion: apps/v1
@@ -74,7 +72,6 @@ spec:
               value: "config.yaml"
           resources:
             {}
-            
           volumeMounts:
             - name: config-volume
               mountPath: /config.yaml
@@ -83,4 +80,3 @@ spec:
         - name: config-volume
           configMap: 
             name: iter8-analytics
-
