@@ -89,13 +89,14 @@ class TestExperiment:
                                      'prometheus_sample_response.json')
             m.get(metrics_endpoint, json=json.load(open(file_path)))
             eg = copy.deepcopy(er_example)
-            eg['spec']['metrics'][0]['metricObj']['spec']['params']['query'] = "sum(increase(revision_app_request_latencies_count{revision_name=~'.*$svc_name'}[$interval])) or on() vector(0)"
-            eg['spec']['metrics'][1]['metricObj']['spec']['params']['query'] = "(sum(increase(revision_app_request_latencies_sum{revision_name=~'.*$svc_name'}[$interval]))or on() vector(0)) / (sum(increase(revision_app_request_latencies_count{revision_name=~'.*$svc_name'}[$interval])) or on() vector(0))"
-            eg['spec']['versionInfo']['baseline']['tags'] = {"revision_name": "sample-application-v1"}
-            eg['spec']['versionInfo']['candidates'][0]['tags'] = {"revision_name": "sample-application-v2"}
+            eg['spec']['metrics'][0]['metricObj']['spec']['params'][0]['value'] = "sum(increase(revision_app_request_latencies_count{revision_name=~'.*$svc_name'}[$interval])) or on() vector(0)"
+            eg['spec']['metrics'][1]['metricObj']['spec']['params'][0]['value'] = "(sum(increase(revision_app_request_latencies_sum{revision_name=~'.*$svc_name'}[$interval]))or on() vector(0)) / (sum(increase(revision_app_request_latencies_count{revision_name=~'.*$svc_name'}[$interval])) or on() vector(0))"
+            eg['spec']['versionInfo']['baseline']['variables'] = [{"name": "revision_name", "value": "sample-application-v1"}]
+            eg['spec']['versionInfo']['candidates'][0]['variables'] = [{"name": "revision_name", "value": "sample-application-v2"}]
             er = ExperimentResource(** eg)
             
             resp = get_aggregated_metrics(er.convert_to_float()).convert_to_quantity()
+            logger.info(resp)
             assert("Error from metrics backend for metric" in resp.message)
     
     def test_v2_analytics_assessment_conformance(self):
@@ -147,13 +148,13 @@ class TestExperiment:
                             "default": {
                                 "max": None,
                                 "min": None,
-                                "sample_size": None,
+                                "sampleSize": None,
                                 "value": None
                             },
                             "canary": {
                                 "max": None,
                                 "min": None,
-                                "sample_size": None,
+                                "sampleSize": None,
                                 "value": None
                             }
                         }
@@ -165,13 +166,13 @@ class TestExperiment:
                             "default": {
                                 "max": None,
                                 "min": None,
-                                "sample_size": None,
+                                "sampleSize": None,
                                 "value": None
                             },
                             "canary": {
                                 "max": None,
                                 "min": None,
-                                "sample_size": None,
+                                "sampleSize": None,
                                 "value": None
                             }
                         }
