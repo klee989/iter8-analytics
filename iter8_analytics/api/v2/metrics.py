@@ -13,6 +13,7 @@ import json
 
 # external module dependencies
 import requests
+from requests.auth import HTTPBasicAuth
 import numpy as np
 import jq
 from cachetools import cached, TTLCache
@@ -21,7 +22,7 @@ from kubernetes import config as kubeconfig
 
 # iter8 dependencies
 from iter8_analytics.api.v2.types import AggregatedMetricsAnalysis, ExperimentResource, \
-    MetricResource, VersionDetail, AggregatedMetric, VersionMetric
+    MetricResource, VersionDetail, AggregatedMetric, VersionMetric, AuthType
 from iter8_analytics.api.utils import Message, MessageLevel
 
 logger = logging.getLogger('iter8_analytics')
@@ -61,7 +62,7 @@ def get_secret_data_for_metric(metric_resource: MetricResource):
     # this is the most accepted answer at this point
     my_ns = open("/var/run/secrets/kubernetes.io/serviceaccount/namespace").read()
     if metric_resource.spec.secret is None:
-        return None, "metric does not reference any secret"
+        return None, ValueError("metric does not reference any secret")
     # there is a secret referenced in the metric ...
     namespaced_name = metric_resource.spec.secret.split("/")
     if len(namespaced_name) == 1: # secret does not have a namespace in it
@@ -74,6 +75,8 @@ def interpolate(template: str, args: dict):
     """
     Interpolate a template string using a dictionary
     """
+    if args is None:
+        return template, None
     try:
         templ = Template(template)
         # if placeholder values are not present in args dictionary,
@@ -85,8 +88,11 @@ def interpolate(template: str, args: dict):
         return None, "Error while attemping to substitute tag in query template"
 
 def get_url(metric_resource: MetricResource):
-    """
-    Get the URL for the given metric by interpolating the URLTemplate string using secret.
+    """Derive URL by substituting placeholders in the URLTemplate of a metric resource.
+    Placeholder substitution will be attempted if the metric resource references a valid secret.
+
+    Keyword arguments:
+    metric_resource: the metric resource
     """
     if metric_resource.spec.secret is None: # no need to interpolate
         return metric_resource.spec.urlTemplate, None
@@ -107,7 +113,13 @@ def get_headers(metric_resource: MetricResource):
     # initialize headers dictionary
     for item in metric_resource.spec.headerTemplates:
         headers[item.name] = item.value
-    # if no secret is referenced, there is nothing to do
+    # if authType is None, interpolation is not attempted
+    if metric_resource.spec.authType is None:
+        return headers, None
+    # if authType is Basic, interpolation is not attempted
+    if metric_resource.spec.authType == AuthType.BASIC:
+        return headers, None
+    # if there is no secret referenced, interpolation is not attempted
     if metric_resource.spec.secret is None:
         return headers, None
 
@@ -119,6 +131,29 @@ def get_headers(metric_resource: MetricResource):
             if err is not None:
                 return None, err
         return headers, None
+    return None, err
+
+def get_basic_auth(metric_resource: MetricResource):
+    """
+    Get basic auth information.
+    """
+    # return error if authType is not Basic
+    if metric_resource.spec.authType is None or \
+        metric_resource.spec.authType != AuthType.BASIC:
+        return None, \
+            ValueError("get_basic_auth call is not supported for None of non-Basic auth types")
+
+    # return error if secret is missing
+    if metric_resource.spec.secret is None:
+        return None, ValueError("basic auth requires a secret")
+
+    # args contain decoded secret data for basic auth
+    args, err = get_secret_data_for_metric(metric_resource)
+    if err is None:
+        if "username" in args and "password" in args:
+            return HTTPBasicAuth(args["username"], args["password"]), None
+        else:
+            return None, ValueError("username and password keys missing in secret data")
     return None, err
 
 def get_params(metric_resource: MetricResource, version: VersionDetail, start_time: datetime):
@@ -171,10 +206,18 @@ def get_metric_value(metric_resource: MetricResource, version: VersionDetail, st
         # interpolated params
         params, err = get_params(metric_resource, version, start_time)
     if err is None:
+        if metric_resource.spec.authType == AuthType.BASIC:
+            # basic auth info
+            auth, err = get_basic_auth(metric_resource)
+    if err is None:
         try:
             logger.debug("Invoking requests get with url %s and params: \
                 %s and headers: %s", url, params, headers)
-            raw_response = requests.get(url, params = params, headers = headers, timeout = 2.0)
+            if metric_resource.spec.authType == AuthType.BASIC:
+                raw_response = requests.get(url, params = params, auth = auth, \
+                    headers = headers, timeout = 2.0)
+            else:
+                raw_response = requests.get(url, params = params, headers = headers, timeout = 2.0)
             logger.debug("response status code: %s", raw_response.status_code)
             logger.debug("response text: %s", raw_response.text)
             response = raw_response.json()
@@ -204,7 +247,7 @@ def get_aggregated_metrics(expr: ExperimentResource):
 
     #check if start time is greater than now
     if expr.status.startTime > (datetime.now(timezone.utc)):
-        messages.append(Message(MessageLevel.error, "Invalid startTime: greater than current time"))
+        messages.append(Message(MessageLevel.ERROR, "Invalid startTime: greater than current time"))
         iam.message = Message.join_messages(messages)
         return iam
 
@@ -221,7 +264,7 @@ def get_aggregated_metrics(expr: ExperimentResource):
                 if err is None:
                     iam.data[metric_resource.name].data[version.name].value = val
                 else:
-                    messages.append(Message(MessageLevel.error, \
+                    messages.append(Message(MessageLevel.ERROR, \
                         f"Error from metrics backend for metric: {metric_resource.name} \
                             and version: {version.name}"))
 
