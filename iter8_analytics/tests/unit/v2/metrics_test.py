@@ -22,7 +22,9 @@ from iter8_analytics.api.v2.metrics import get_params, get_url, get_headers, \
 from iter8_analytics.api.v2.types import ExperimentResource, MetricInfo, \
     MetricResource, NamedValue, AuthType
 from iter8_analytics.api.v2.examples.examples_canary import er_example
-from iter8_analytics.api.v2.examples.examples_metrics import cpu_utilization
+from iter8_analytics.api.v2.examples.examples_metrics import cpu_utilization, \
+    request_count, new_relic_embedded, new_relic_secret, sysdig_embedded, \
+    sysdig_secret, elastic_secret
 
 logger = logging.getLogger('iter8_analytics')
 if not logger.hasHandlers():
@@ -175,7 +177,6 @@ class HeaderTemplate(TestCase):
         assert headers is None
         assert err is not None
 
-
     @mock.patch('iter8_analytics.api.v2.metrics.get_secret_data_for_metric')
     def test_bearer_auth_type(self, mock_secret):
         """When authType is Bearer, and secret is valid, interpolate headers"""
@@ -297,7 +298,7 @@ class BodyInterpolation(TestCase):
         assert body["last"]  > 32931645
         assert body["filter"] == "kubernetes.node.name = 'n1' and service = 'default'"
 
-    def test_POST_metric(self):
+    def test_post_metric(self):
         """POST metric query must result in a value"""
         with requests_mock.mock(real_http=True) as req_mock:
             req_mock.register_uri('POST', cpu_utilization["metricObj"]
@@ -322,6 +323,279 @@ class BodyInterpolation(TestCase):
             assert err is None
             assert value == 6.481
 
+class SamplesUsedInIter8Docs(TestCase):
+    """Test samples used in https://iter8.tools for metrics"""
 
+    def test_prometheus(self):
+        """Test prometheus with no authentication"""
+        with requests_mock.mock(real_http=True) as req_mock:
+            prometheus_no_auth = request_count
+            metric_info = MetricInfo(** prometheus_no_auth)
+            metric_info.metricObj.spec.params[0].value = "sum(increase(revision_app_request_latencies_count{service_name='${name}',${userfilter}}[${elapsedTime}s])) or on() vector(0)"
+            url = metric_info.metricObj.spec.urlTemplate
+            json_response = {
+                "status": "success",
+                "data": {
+                    "resultType": "vector",
+                    "result": [
+                        {
+                            "value": [1556823494.744, "21.7639"]
+                        }
+                    ]
+                }
+            }
+            req_mock.register_uri('GET', url, json = json_response, status_code = 200)
 
+            expr = ExperimentResource(** er_example)
+            version = expr.spec.versionInfo.baseline
+            version.variables = [
+                NamedValue(name = "userfilter", value = 'usergroup!~"wakanda"')
+            ]
+            start_time = expr.status.startTime
 
+            # verify params
+            params = get_params(metric_info.metricObj, version, start_time)
+            logger.info(params)
+            groups = re.search('(usergroup!~"wakanda")', params[0]["query"])
+            assert groups is not None
+
+            # verify jq expression
+            value, err = get_metric_value(metric_info.metricObj, version, start_time)
+            assert err is None
+            assert value == 21.7639
+
+    @mock.patch('iter8_analytics.api.v2.metrics.get_secret_data_for_metric')
+    def test_prometheus_basic_auth(self, mock_secret):
+        """Test prometheus with no authentication"""
+        with requests_mock.mock(real_http=True) as req_mock:
+            prometheus_basic_auth = request_count
+            metric_info = MetricInfo(** prometheus_basic_auth)
+            metric_info.metricObj.spec.params[0].value = "sum(increase(revision_app_request_latencies_count{service_name='${name}',${userfilter}}[${elapsedTime}s])) or on() vector(0)"
+            metric_info.metricObj.spec.authType = AuthType.BASIC
+            metric_info.metricObj.spec.secret = "myns/promcredentials"
+            url = metric_info.metricObj.spec.urlTemplate
+            json_response = {
+                "status": "success",
+                "data": {
+                    "resultType": "vector",
+                    "result": [
+                        {
+                            "value": [1556823494.744, "21.7639"]
+                        }
+                    ]
+                }
+            }
+            req_mock.register_uri('GET', url, json = json_response, status_code = 200)
+            mock_secret.return_value = ({
+                "username": "produser",
+                "password": "t0p-secret"
+            }, None)
+            auth, err = get_basic_auth(metric_info.metricObj)
+            mock_secret.assert_called_with(metric_info.metricObj)
+            assert auth == HTTPBasicAuth("produser", "t0p-secret")
+            assert err is None
+
+            expr = ExperimentResource(** er_example)
+            version = expr.spec.versionInfo.baseline
+            version.variables = [
+                NamedValue(name = "userfilter", value = 'usergroup!~"wakanda"')
+            ]
+            start_time = expr.status.startTime
+
+            # verify params
+            params = get_params(metric_info.metricObj, version, start_time)
+            logger.info(params)
+            groups = re.search('(usergroup!~"wakanda")', params[0]["query"])
+            assert groups is not None
+
+            # verify jq expression
+            value, err = get_metric_value(metric_info.metricObj, version, start_time)
+            assert err is None
+            assert value == 21.7639
+
+    def test_new_relic_embedded_apikey(self):
+        """Test New Relic with an embedded API Key"""
+        with requests_mock.mock(real_http=True) as req_mock:
+            nre = MetricResource(** new_relic_embedded)
+            url = nre.spec.urlTemplate
+            file_path = os.path.join(os.path.dirname(__file__), 'data/newrelic_responses',
+                                        'newrelic_sample_response.json')
+            response_json = json.load(open(file_path))
+            req_mock.register_uri('GET', url, json = response_json, status_code = 200, request_headers={'X-Query-Key': 't0p-secret-api-key'})
+
+            expr = ExperimentResource(** er_example)
+            version = expr.spec.versionInfo.baseline
+            version.variables = [
+                NamedValue(name = "userfilter", value = 'usergroup!~"wakanda"'),
+                NamedValue(name = "revision", value = 'sample-app-v1')
+            ]
+            start_time = expr.status.startTime
+
+            # verify params
+            params = get_params(nre, version, start_time)
+            logger.info(params)
+            groups = re.search("'sample-app-v1'", params[0]["nrql"])
+            assert groups is not None
+
+            # verify jq expression
+            value, err = get_metric_value(nre, version, start_time)
+            assert err is None
+            assert value == 80275388
+
+    @mock.patch('iter8_analytics.api.v2.metrics.get_secret_data_for_metric')
+    def test_new_relic_secret(self, mock_secret):
+        """Test New Relic with a secret API Key"""
+        with requests_mock.mock(real_http=True) as req_mock:
+            nre = MetricResource(** new_relic_secret)
+            url = nre.spec.urlTemplate
+            file_path = os.path.join(os.path.dirname(__file__), 'data/newrelic_responses',
+                                        'newrelic_sample_response.json')
+            response_json = json.load(open(file_path))
+            req_mock.register_uri('GET', url, json = response_json, status_code = 200, request_headers={'X-Query-Key': 't0p-secret-api-key'})
+            mock_secret.return_value = ({
+                "mykey": "t0p-secret-api-key"
+            }, None)
+
+            expr = ExperimentResource(** er_example)
+            version = expr.spec.versionInfo.baseline
+            version.variables = [
+                NamedValue(name = "userfilter", value = 'usergroup!~"wakanda"'),
+                NamedValue(name = "revision", value = 'sample-app-v1')
+            ]
+            start_time = expr.status.startTime
+
+            # verify params
+            params = get_params(nre, version, start_time)
+            logger.info(params)
+            groups = re.search("'sample-app-v1'", params[0]["nrql"])
+            assert groups is not None
+
+            # verify jq expression
+            value, err = get_metric_value(nre, version, start_time)
+            assert err is None
+            assert value == 80275388
+
+    def test_sysdig_embedded_token(self):
+        """Test Sysdig with an embedded token"""
+        with requests_mock.mock(real_http=True) as req_mock:
+            sde = MetricResource(** sysdig_embedded)
+            url = sde.spec.urlTemplate
+            response_json = {
+                "data": [
+                    {
+                        "t": 1582756200,
+                        "d": [
+                            6.481
+                        ]
+                    }
+                ],
+                "start": 1582755600,
+                "end": 1582756200
+            }
+            req_mock.register_uri('POST', url, json = response_json, status_code = 200, \
+                request_headers={'Authorization': 'Bearer 87654321-1234-1234-1234-123456789012'})
+
+            expr = ExperimentResource(** er_example)
+            version = expr.spec.versionInfo.baseline
+            version.variables = [
+                NamedValue(name = "userfilter", value = 'usergroup!~"wakanda"'),
+                NamedValue(name = "revision", value = 'sample-app-v1')
+            ]
+            start_time = expr.status.startTime
+
+            # verify body
+            body, err = get_body(sde, version, start_time)
+            logger.info(body)
+            assert err is None
+            groups = re.search("'sample-app-v1'", body["filter"])
+            assert groups is not None
+
+            # verify jq expression
+            value, err = get_metric_value(sde, version, start_time)
+            assert err is None
+            assert value == 6.481
+
+    @mock.patch('iter8_analytics.api.v2.metrics.get_secret_data_for_metric')
+    def test_sysdig_secret(self, mock_secret):
+        """Test Sysdig with secret token"""
+        with requests_mock.mock(real_http=True) as req_mock:
+            sde = MetricResource(** sysdig_secret)
+            url = sde.spec.urlTemplate
+            response_json = {
+                "data": [
+                    {
+                        "t": 1582756200,
+                        "d": [
+                            6.481
+                        ]
+                    }
+                ],
+                "start": 1582755600,
+                "end": 1582756200
+            }
+            req_mock.register_uri('POST', url, json = response_json, status_code = 200, \
+                request_headers={'Authorization': 'Bearer 87654321-1234-1234-1234-123456789012'})
+            mock_secret.return_value = ({
+                "token": "87654321-1234-1234-1234-123456789012"
+            }, None)
+
+            expr = ExperimentResource(** er_example)
+            version = expr.spec.versionInfo.baseline
+            version.variables = [
+                NamedValue(name = "userfilter", value = 'usergroup!~"wakanda"'),
+                NamedValue(name = "revision", value = 'sample-app-v1')
+            ]
+            start_time = expr.status.startTime
+
+            # verify body
+            body, err = get_body(sde, version, start_time)
+            logger.info(body)
+            assert err is None
+            groups = re.search("'sample-app-v1'", body["filter"])
+            assert groups is not None
+
+            # verify jq expression
+            value, err = get_metric_value(sde, version, start_time)
+            assert err is None
+            assert value == 6.481
+
+    @mock.patch('iter8_analytics.api.v2.metrics.get_secret_data_for_metric')
+    def test_elastic_secret(self, mock_secret):
+        """Test Sysdig with a secret token"""
+        with requests_mock.mock(real_http=True) as req_mock:
+            ela = MetricResource(** elastic_secret)
+            url = ela.spec.urlTemplate
+            response_json = {
+                "aggregations": {
+                    "items_to_sell": {
+                        "doc_count": 3,
+                        "avg_sales": {"value": 128.33333333333334}
+                    }
+                }
+            }
+            req_mock.register_uri('POST', url, json = response_json, status_code = 200, \
+                request_headers={'Authorization': 'Basic cHJvZHVzZXI6dDBwLXNlY3JldA=='})
+            mock_secret.return_value = ({
+                "username": "produser",
+                "password": "t0p-secret"
+            }, None)
+
+            expr = ExperimentResource(** er_example)
+            version = expr.spec.versionInfo.baseline
+            version.variables = [
+                NamedValue(name = "userfilter", value = 'usergroup!~"wakanda"'),
+                NamedValue(name = "revision", value = 'sample-app-v1')
+            ]
+            start_time = expr.status.startTime
+
+            # verify body
+            body, err = get_body(ela, version, start_time)
+            logger.info(body)
+            assert err is None
+            groups = re.search("sample-app-v1", body["aggs"]["items_to_sell"]["filter"]["term"]["version"])
+            assert groups is not None
+
+            # verify jq expression
+            value, err = get_metric_value(ela, version, start_time)
+            assert err is None
+            assert value == 128.33333333333334

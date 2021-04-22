@@ -4,7 +4,7 @@ Metric examples used in other examples.
 request_count = {
     "name": "request-count",
     "metricObj": {
-        "apiVersion": "core.iter8.tools/v2alpha2",
+        "apiVersion": "iter8.tools/v2alpha2",
         "kind": "Metric",
         "metadata": {
             "name": "request-count"
@@ -26,7 +26,7 @@ request_count = {
 mean_latency = {
     "name": "mean-latency",
     "metricObj": {
-        "apiVersion": "core.iter8.tools/v2alpha2",
+        "apiVersion": "iter8.tools/v2alpha2",
         "kind": "Metric",
         "metadata": {
             "name": "mean-latency"
@@ -70,7 +70,7 @@ mean_latency = {
 cpu_utilization = {
     "name": "cpu-utilization",
     "metricObj": {
-        "apiVersion": "core.iter8.tools/v2alpha2",
+        "apiVersion": "iter8.tools/v2alpha2",
         "kind": "Metric",
         "metadata": {
             "name": "cpu-utilization"
@@ -90,7 +90,7 @@ cpu_utilization = {
 business_revenue = {
     "name": "business-revenue",
     "metricObj": {
-        "apiVersion": "core.iter8.tools/v2alpha2",
+        "apiVersion": "iter8.tools/v2alpha2",
         "kind": "Metric",
         "metadata": {
             "name": "business-revenue"
@@ -111,4 +111,141 @@ business_revenue = {
             "urlTemplate": "http://prometheus-operated.iter8-monitoring:9090/api/v1/query"
         }
     }
+}
+
+new_relic_embedded = {
+    "apiVersion": "iter8.tools/v2alpha2",
+    "kind": "Metric",
+    "metadata": {
+        "name": "name-count"
+    },
+    "spec": {
+        "params": [
+            {
+                "name": "nrql",
+                "value": "SELECT count(appName) FROM PageView WHERE revisionName='${revision}' SINCE ${elapsedTime} seconds ago"
+            }
+        ],
+        "description": "A New Relic example",
+        "type": "Counter",
+        "headerTemplates": [
+            {
+                "name": "X-Query-Key",
+                "value": "t0p-secret-api-key"
+            }
+        ],
+        "provider": "newrelic",
+                    "jqExpression": ".results[0].count | tonumber",
+                    "urlTemplate": "https://insights-api.newrelic.com/v1/accounts/my_account_id"
+    }
+}
+
+new_relic_secret = {
+  "apiVersion": "iter8.tools/v2alpha2",
+  "kind": "Metric",
+  "metadata": {
+    "name": "name-count"
+  },
+  "spec": {
+    "params": [
+      {
+        "name": "nrql",
+        "value": "SELECT count(appName) FROM PageView WHERE revisionName='${revision}' SINCE ${elapsedTime} seconds ago"
+      }
+    ],
+    "description": "A New Relic example",
+    "type": "Counter",
+    "authType": "APIKey",
+    "secret": "myns/nrcredentials",
+    "headerTemplates": [
+      {
+        "name": "X-Query-Key",
+        "value": "${mykey}"
+      }
+    ],
+    "provider": "newrelic",
+    "jqExpression": ".results[0].count | tonumber",
+    "urlTemplate": "https://insights-api.newrelic.com/v1/accounts/my_account_id"
+  }
+}
+
+sysdig_embedded = {
+  "apiVersion": "iter8.tools/v2alpha2",
+  "kind": "Metric",
+  "metadata": {
+    "name": "cpu-utilization"
+  },
+  "spec": {
+    "description": "A Sysdig example",
+    "provider": "sysdig",
+    "body": "{\n  \"last\": ${elapsedTime},\n  \"sampling\": 600,\n  \"filter\": \"kubernetes.app.revision.name = '${revision}'\",\n  \"metrics\": [\n    {\n      \"id\": \"cpu.cores.used\",\n      \"aggregations\": { \"time\": \"avg\", \"group\": \"sum\" }\n    }\n  ],\n  \"dataSourceType\": \"container\",\n  \"paging\": {\n    \"from\": 0,\n    \"to\": 99\n  }\n}",
+    "method": "POST",
+    "type": "Gauge",
+    "headerTemplates": [
+      {
+        "name": "Accept",
+        "value": "application/json"
+      },
+      {
+        "name": "Authorization",
+        "value": "Bearer 87654321-1234-1234-1234-123456789012"
+      }
+    ],
+    "jqExpression": ".data[0].d[0] | tonumber",
+    "urlTemplate": "https://secure.sysdig.com/api/data"
+  }
+}
+
+sysdig_secret = {
+  "apiVersion": "iter8.tools/v2alpha2",
+  "kind": "Metric",
+  "metadata": {
+    "name": "cpu-utilization"
+  },
+  "spec": {
+    "description": "A Sysdig example",
+    "provider": "sysdig",
+    "body": "{\n  \"last\": ${elapsedTime},\n  \"sampling\": 600,\n  \"filter\": \"kubernetes.app.revision.name = '${revision}'\",\n  \"metrics\": [\n    {\n      \"id\": \"cpu.cores.used\",\n      \"aggregations\": { \"time\": \"avg\", \"group\": \"sum\" }\n    }\n  ],\n  \"dataSourceType\": \"container\",\n  \"paging\": {\n    \"from\": 0,\n    \"to\": 99\n  }\n}",
+    "method": "POST",
+    "authType": "Bearer",
+    "secret": "myns/sdcredentials",
+    "type": "Gauge",
+    "headerTemplates": [
+      {
+        "name": "Accept",
+        "value": "application/json"
+      },
+      {
+        "name": "Authorization",
+        "value": "Bearer ${token}"
+      }
+    ],
+    "jqExpression": ".data[0].d[0] | tonumber",
+    "urlTemplate": "https://secure.sysdig.com/api/data"
+  }
+}
+
+elastic_secret = {
+  "apiVersion": "iter8.tools/v2alpha2",
+  "kind": "Metric",
+  "metadata": {
+    "name": "average-sales"
+  },
+  "spec": {
+    "description": "An elastic example",
+    "provider": "elastic",
+    "body": "{\n  \"aggs\": {\n    \"range\": {\n      \"date_range\": {\n        \"field\": \"date\",\n        \"ranges\": [\n          { \"from\": \"now-${elapsedTime}s/s\" } \n        ]\n      }\n    },\n    \"items_to_sell\": {\n      \"filter\": { \"term\": { \"version\": \"${revision}\" } },\n      \"aggs\": {\n        \"avg_sales\": { \"avg\": { \"field\": \"sale_price\" } }\n      }\n    }\n  }\n}",
+    "method": "POST",
+    "authType": "Basic",
+    "secret": "myns/elasticcredentials",
+    "type": "Gauge",
+    "headerTemplates": [
+      {
+        "name": "Content-Type",
+        "value": "application/json"
+      }
+    ],
+    "jqExpression": ".aggregations.items_to_sell.avg_sales.value | tonumber",
+    "urlTemplate": "https://secure.elastic.com/my/sales"
+  }
 }
