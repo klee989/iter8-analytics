@@ -271,7 +271,9 @@ def get_metric_value(metric_resource: MetricResource, version: VersionDetail, st
 
     if err is None:
         try:
-            logger.debug("Invoking requests with method %s and with url %s and params: %s and headers: %s and auth: %s and body: %s", metric_resource.spec.method, url, params, headers, auth, body)
+            logger.debug("Invoking requests with method %s and with \
+                url %s and params: %s and headers: %s and auth: %s and body: %s", \
+                    metric_resource.spec.method, url, params, headers, auth, body)
             raw_response = get_raw_response(url = url, \
                 method = metric_resource.spec.method, params = params, body = body, \
                     headers = headers, auth = auth, timeout = 5.0)
@@ -319,9 +321,16 @@ def get_aggregated_metrics(expr: ExperimentResource):
                 iam.data[metric_resource.name].data[version.name] = VersionMetric()
                 val, err = get_metric_value(metric_resource.metricObj, version, \
                 expr.status.startTime)
-                if err is None:
-                    iam.data[metric_resource.name].data[version.name].value = val
+                if err is None and val is not None:
+                        iam.data[metric_resource.name].data[version.name].value = val
                 else:
+                    try:
+                        val = float(expr.status.analysis.aggregated_metrics.data[metric_resource.name].data[version.name].value)
+                    except:
+                        val = None
+                    iam.data[metric_resource.name].data[version.name].value = val
+                    
+                if err is not None:
                     messages.append(Message(MessageLevel.ERROR, \
                         f"Error from metrics backend for metric: {metric_resource.name} \
                             and version: {version.name}"))
