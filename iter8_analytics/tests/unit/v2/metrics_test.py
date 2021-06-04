@@ -18,7 +18,7 @@ from iter8_analytics.config import env_config
 import iter8_analytics.constants as constants
 
 from iter8_analytics.api.v2.metrics import get_params, get_url, get_headers, \
-    get_basic_auth, get_body, get_metric_value
+    get_basic_auth, get_body, get_metric_value, get_builtin_metrics
 from iter8_analytics.api.v2.types import ExperimentResource, MetricInfo, \
     MetricResource, NamedValue, AuthType
 from iter8_analytics.api.v2.examples.examples_canary import er_example
@@ -31,6 +31,17 @@ if not logger.hasHandlers():
     fastapi_app.config_logger(env_config[constants.LOG_LEVEL])
 
 logger.info(env_config)
+
+class BuiltInMetrics(TestCase):
+    """Test builtin metrics"""
+
+    def test_builtin_metrics_creation(self):
+        """Test built in metrics creation"""
+        file_path = os.path.join(os.path.dirname(__file__), 'data/experiments',
+                                            'metricscollected.json')
+        expr = ExperimentResource.parse_file(file_path)
+        iam = get_builtin_metrics(expr)
+        assert iam is not None
 
 class ParamInterpolation(TestCase):
     """Test parameter computation"""
@@ -604,3 +615,4 @@ class SamplesUsedInIter8Docs(TestCase):
             value, err = get_metric_value(ela, version, start_time)
             assert err is None
             assert value == 128.33333333333334
+

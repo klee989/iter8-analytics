@@ -2,7 +2,7 @@
 Module containing pydantic data models for iter8 v2
 """
 # core python dependencies
-from typing import Sequence, Dict, Union
+from typing import MutableSequence, Sequence, Dict, Union, Any
 from datetime import datetime
 from enum import Enum
 
@@ -63,6 +63,9 @@ class MetricSpec(BaseModel):
         and value templates for headers that should be passed to the metrics backend; \
         typically, these are authentication headers; \
         values are interpolated using secret data")
+    provider: str = Field(None, \
+        description = "provider field is used to \
+        disambiguate between builtin metrics and custom metrics")
 
 class MetricResource(BaseModel):
     """
@@ -302,7 +305,7 @@ class VersionAssessmentsAnalysis(BaseModel):
     """
     Pydantic model for version assessments
     """
-    data: Dict[str, Sequence[bool]] = Field(..., \
+    data: Dict[str, MutableSequence[bool]] = Field(..., \
     description = "dictionary with version name as key and \
         sequence of booleans as value; each element of the sequence indicates if \
         the version satisfies the corresponding objective.")
@@ -347,6 +350,8 @@ class Analysis(BaseModel):
     """
     Pydantic model for analysis section of experiment status
     """
+    aggregated_builtin_hists: Any = Field(None, \
+        description = "aggregated builtin metric histograms", alias = "aggregatedBuiltinHists")
     aggregated_metrics: AggregatedMetricsAnalysis = Field(None, \
         description = "aggregated metrics", alias = "aggregatedMetrics")
     version_assessments: VersionAssessmentsAnalysis = Field(None, \
