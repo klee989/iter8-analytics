@@ -25,6 +25,30 @@ class NamedValue(BaseModel):
 
 #### Metrics
 
+class NamedLevel(BaseModel):
+    """
+    Pydantic model for version-level pair used in mocking metrics.
+    For complete documentation, see: https://github.com/iter8-tools/etc3/blob/1f747f07de7008895717c415dac9173b57374afa/api/v2alpha2/metric_types.go#L76
+
+    NamedLevel contains the name of a version and the level of the version to be used in mock metric generation.
+
+    The semantics of level are the following:
+    ---
+    If the metric is a counter, if level is x, and time elapsed since the start of the experiment is y, then x*y is the metric value.
+    Note: this will keep increasing over time as counters do.
+    If the metric is gauge, if level is x, the metric value is a random value with mean x.
+    Note: due to randomness, this stay around x but can go up or down as a gauges do.
+    """
+    name: str = Field(..., description = "name of the version")
+    level: PolymorphicQuantity = Field(..., description = "level of the version")
+
+    def convert_to_float(self):
+        """
+        Apply convert_to_float on level
+        """
+        self.level = convert_to_float(self.level)
+        return self
+
 class AuthType(str, Enum):
     """
     Types of authentication used in the HTTP(S) request to the metrics API endpoint.
@@ -40,17 +64,25 @@ class Method(str, Enum):
     GET = "GET"
     POST = "POST"
 
+class MetricType(str, Enum):
+    """
+    Is the metric type counter or gauge
+    """
+    Counter = "Counter"
+    Gauge = "Gauge"
+
 class MetricSpec(BaseModel):
     """
     Pydantic model for metric spec subresource
     """
     params: Sequence[NamedValue] = Field(None, description = "parameters to be used \
         as part of the REST query for this metric")
-    jqExpression: str = Field(..., \
+    jqExpression: str = Field(None, \
         description = "jq expression used for unmarshaling metric value from \
             the JSON response body of the metrics backend's REST API")
-    urlTemplate: str = Field(..., description = \
+    urlTemplate: str = Field(None, description = \
         "template of the URL to be used for querying this metric")
+    type: MetricType = Field(MetricType.Gauge, description = "counter or gauge")
     authType: AuthType = Field(None, description = \
         "type of authentication used in the HTTP(S) request to the metrics API endpoint")
     method: Method = Field(Method.GET, description = \
@@ -66,6 +98,17 @@ class MetricSpec(BaseModel):
     provider: str = Field(None, \
         description = "provider field is used to \
         disambiguate between builtin metrics and custom metrics")
+    mock: Sequence[NamedLevel] = Field(None, \
+        description = "information needed for mocking this metric")
+
+    def convert_to_float(self):
+        """
+        Apply convert_to_float for each version levvel
+        """
+        if self.mock is not None:
+            for named_level in self.mock:
+                named_level.convert_to_float()
+        return self
 
 class MetricResource(BaseModel):
     """
