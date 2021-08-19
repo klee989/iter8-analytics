@@ -1,45 +1,34 @@
 """
 Module containing classes and methods for querying prometheus and returning metric data.
 """
+# core python dependencies
+from datetime import datetime, timezone
+import logging
+from string import Template
+from typing import Sequence, Dict, Any
+import numbers
+import pprint
 import base64
 import binascii
 import json
-import logging
-import numbers
-import pprint
-
-# core python dependencies
-from datetime import datetime, timezone
-from string import Template
-from typing import Any, Dict, Sequence
-
-import jq
-import numpy as np
 import pytz
 
 # external module dependencies
 import requests
-from cachetools import TTLCache, cached
+from requests.auth import HTTPBasicAuth
+import numpy as np
+import jq
+from cachetools import cached, TTLCache
 from kubernetes import client as kubeclient
 from kubernetes import config as kubeconfig
-from requests.auth import HTTPBasicAuth
-
-from iter8_analytics.api.utils import Message, MessageLevel
 
 # iter8 dependencies
-from iter8_analytics.api.v2.types import (
-    AggregatedMetric,
-    AggregatedMetricsAnalysis,
-    AuthType,
-    ExperimentResource,
-    Method,
-    MetricResource,
-    MetricType,
-    VersionDetail,
-    VersionMetric,
-)
+from iter8_analytics.api.v2.types import AggregatedMetricsAnalysis, ExperimentResource, \
+    MetricResource, VersionDetail, AggregatedMetric, VersionMetric, MetricType, \
+    AuthType, Method
+from iter8_analytics.api.utils import Message, MessageLevel
 
-logger = logging.getLogger("iter8_analytics")
+logger = logging.getLogger('iter8_analytics')
 
 # namespaced names of builtin metrics
 builtin_metrics_nn = [
@@ -47,11 +36,11 @@ builtin_metrics_nn = [
     "iter8-system/error-count",
     "iter8-system/error-rate",
     "iter8-system/mean-latency",
-    "iter8-system/latency-50th-percentile",  # median
+    "iter8-system/latency-50th-percentile", # median
     "iter8-system/latency-75th-percentile",
     "iter8-system/latency-90th-percentile",
     "iter8-system/latency-95th-percentile",
-    "iter8-system/latency-99th-percentile",
+    "iter8-system/latency-99th-percentile"
 ]
 
 # cache secrets data for no longer than ten seconds
@@ -64,10 +53,8 @@ def get_secret_data(name, namespace):
     try:
         sec = core.read_namespaced_secret(name, namespace)
     except kubeclient.exceptions.ApiException as exc:
-        logger.error(
-            "An exception occurred while attempting to read secret.. \
-            does iter8-analytics have RBAC permissions for reading this secret?"
-        )
+        logger.error("An exception occurred while attempting to read secret.. \
+            does iter8-analytics have RBAC permissions for reading this secret?")
         return None, exc
     # at this point, the read_namespaced_secret call succeeded...
     if sec is None:
@@ -80,13 +67,10 @@ def get_secret_data(name, namespace):
             try:
                 # ascii decoding of data is the lowest common denominator
                 # HTTP headers need to be ascii encoded
-                sec_data[field] = base64.b64decode(sec.data[field]).decode(
-                    encoding="ascii"
-                )
+                sec_data[field] = base64.b64decode(sec.data[field]).decode(encoding="ascii")
             except (UnicodeDecodeError, binascii.Error) as err:
                 return None, err
     return sec_data, None
-
 
 def get_secret_data_for_metric(metric_resource: MetricResource):
     """fetch a secret referenced in a metric from Kubernetes cluster and return its decoded data"""
@@ -97,12 +81,11 @@ def get_secret_data_for_metric(metric_resource: MetricResource):
         return None, ValueError("metric does not reference any secret")
     # there is a secret referenced in the metric ...
     namespaced_name = metric_resource.spec.secret.split("/")
-    if len(namespaced_name) == 1:  # secret does not have a namespace in it
+    if len(namespaced_name) == 1: # secret does not have a namespace in it
         args, err = get_secret_data(namespaced_name[0], my_ns)
-    elif len(namespaced_name) == 2:  # secret has a namespace in it
+    elif len(namespaced_name) == 2: # secret has a namespace in it
         args, err = get_secret_data(namespaced_name[1], namespaced_name[0])
     return args, err
-
 
 def interpolate(template: str, args: dict):
     """
@@ -120,7 +103,6 @@ def interpolate(template: str, args: dict):
         logger.error("Error while attemping to substitute tag in query template")
         return None, "Error while attemping to substitute tag in query template"
 
-
 def get_url(metric_resource: MetricResource):
     """Derive URL by substituting placeholders in the URLTemplate of a metric resource.
     Placeholder substitution will be attempted if the metric resource references a valid secret.
@@ -130,14 +112,13 @@ def get_url(metric_resource: MetricResource):
     """
     if metric_resource.spec.urlTemplate is None:
         return None, ValueError("No URL template is available in metric resource")
-    if metric_resource.spec.secret is None:  # no need to interpolate
+    if metric_resource.spec.secret is None: # no need to interpolate
         return metric_resource.spec.urlTemplate, None
     args, err = get_secret_data_for_metric(metric_resource)
     # interpolate urlTemplate string using secret data
     if err is None:
         return interpolate(metric_resource.spec.urlTemplate, args)
     return None, err
-
 
 def get_headers(metric_resource: MetricResource):
     """
@@ -170,19 +151,15 @@ def get_headers(metric_resource: MetricResource):
         return headers, None
     return None, err
 
-
 def get_basic_auth(metric_resource: MetricResource):
     """
     Get basic auth information.
     """
     # return error if authType is not Basic
-    if (
-        metric_resource.spec.authType is None
-        or metric_resource.spec.authType != AuthType.BASIC
-    ):
-        return None, ValueError(
-            "get_basic_auth call is not supported for None/non-Basic auth types"
-        )
+    if metric_resource.spec.authType is None or \
+        metric_resource.spec.authType != AuthType.BASIC:
+        return None, \
+            ValueError("get_basic_auth call is not supported for None/non-Basic auth types")
 
     # return error if secret is missing
     if metric_resource.spec.secret is None:
@@ -196,18 +173,14 @@ def get_basic_auth(metric_resource: MetricResource):
         return None, ValueError("username and password keys missing in secret data")
     return None, err
 
-
 def get_elapsed_time_seconds(start_time) -> int:
     """
     If start time is in the future, make it 1 second
     """
     elapsed = int((datetime.now(timezone.utc) - start_time).total_seconds())
-    return max(elapsed, 1)  # at least one second
+    return max(elapsed, 1) # at least one second
 
-
-def get_params(
-    metric_resource: MetricResource, version: VersionDetail, start_time: datetime
-):
+def get_params(metric_resource: MetricResource, version: VersionDetail, start_time: datetime):
     """Interpolate REST query params for metric and return interpolated params"""
     # args contain data from VersionInfo,
     # along with elapsedTime (time since the start of experiment)
@@ -220,17 +193,14 @@ def get_params(
     args["elapsedTime"] = str(elapsed)
 
     params = {}
-    if metric_resource.spec.params is not None:
+    if  metric_resource.spec.params is not None:
         for par in metric_resource.spec.params:
             params[par.name], err = interpolate(par.value, args)
             if err is not None:
                 return None, err
     return params, None
 
-
-def get_body(
-    metric_resource: MetricResource, version: VersionDetail, start_time: datetime
-):
+def get_body(metric_resource: MetricResource, version: VersionDetail, start_time: datetime):
     """Interpolate POST query body for metric and return interpolated body"""
     # args contain data from VersionInfo,
     # along with elapsedTime (time since the start of experiment)
@@ -254,7 +224,6 @@ def get_body(
         return body, None
     except json.JSONDecodeError as jde:
         return None, jde
-
 
 def get_raw_response(url, method, params, body, headers, auth, timeout):
     """Send GET or POST request to the url and get HTTP response"""
@@ -280,7 +249,6 @@ def get_raw_response(url, method, params, body, headers, auth, timeout):
         return requests.post(**kw_args)
     raise ValueError("Unknown HTTP request method")
 
-
 def unmarshal(response, jq_expression):
     """
     Unmarshal metric value from metric response
@@ -296,17 +264,14 @@ def unmarshal(response, jq_expression):
     except Exception as err:
         return None, err
 
-
 def is_mocked(metric_resource: MetricResource) -> bool:
     """
     Is this metrics a mocked metric or a real metric?
     """
     return metric_resource.spec.mock is not None
 
-
-def mocked_value(
-    metric_resource: MetricResource, version: VersionDetail, start_time: datetime
-) -> (numbers.Number, BaseException):
+def mocked_value(metric_resource: MetricResource, version: VersionDetail, start_time: datetime)\
+    -> (numbers.Number, BaseException):
     """
     Return a mock value for a mocked metric.
     """
@@ -319,9 +284,7 @@ def mocked_value(
             break
 
     if named_level is None:
-        return None, ValueError(
-            "metrics does not specify how to mock value for version"
-        )
+        return None, ValueError("metrics does not specify how to mock value for version")
 
     # metric does specify how to mock value for version
     # compute time elapsed
@@ -331,16 +294,13 @@ def mocked_value(
     # 1f747f07de7008895717c415dac9173b57374afa/api/v2alpha2/metric_types.go#L71
     if metric_resource.spec.type == MetricType.Counter:
         return (elapsed * named_level.level, None)
-    else:  # gauge metric
+    else: # gauge metric
         _alpha = elapsed
         _beta = elapsed
         beta = np.random.beta(_alpha, _beta)
         return (beta * 2 * named_level.level, None)
 
-
-def get_metric_value(
-    metric_resource: MetricResource, version: VersionDetail, start_time: datetime
-):
+def get_metric_value(metric_resource: MetricResource, version: VersionDetail, start_time: datetime):
     """
     Interpolate metrics backend URL, headerTemplates, and REST query parameters;
     query the metrics backend; return the value of the metric.
@@ -376,35 +336,19 @@ def get_metric_value(
 
     if err is None:
         try:
-            logger.debug(
-                "Invoking requests with method %s and with \
-                url %s and params: %s and headers: %s and auth: %s and body: %s",
-                metric_resource.spec.method,
-                url,
-                params,
-                headers,
-                auth,
-                body,
-            )
-            raw_response = get_raw_response(
-                url=url,
-                method=metric_resource.spec.method,
-                params=params,
-                body=body,
-                headers=headers,
-                auth=auth,
-                timeout=5.0,
-            )
+            logger.debug("Invoking requests with method %s and with \
+                url %s and params: %s and headers: %s and auth: %s and body: %s", \
+                    metric_resource.spec.method, url, params, headers, auth, body)
+            raw_response = get_raw_response(url = url, \
+                method = metric_resource.spec.method, params = params, body = body, \
+                    headers = headers, auth = auth, timeout = 5.0)
             logger.debug("response status code: %s", raw_response.status_code)
             logger.debug("response text: %s", raw_response.text)
             response = raw_response.json()
             logger.debug("json response...")
             logger.debug(response)
-        except (
-            requests.exceptions.RequestException,
-            json.decoder.JSONDecodeError,
-            ValueError,
-        ) as exc:
+        except (requests.exceptions.RequestException, \
+            json.decoder.JSONDecodeError, ValueError) as exc:
             logger.error("Error while attempting to get metric value from backend")
             logger.error(exc)
             return value, exc
@@ -413,7 +357,6 @@ def get_metric_value(
             return value, ValueError("no jqExpression is specific in metric resource")
         value, err = unmarshal(response, metric_resource.spec.jqExpression)
     return value, err
-
 
 # We will mirror the following handler data structures below...
 
@@ -438,23 +381,19 @@ def get_metric_value(
 # 	RetCodes          map[string]int
 # }
 
-
 class DurationSample:
     """
     DurationSample is a Fortio duration sample.
     """
-
     def __init__(self, sample: Dict[str, Any]):
         self.start: float = float(sample["Start"])
         self.end: float = float(sample["End"])
         self.count: int = int(sample["Count"])
 
-
 class DurationHist:
     """
     DurationHist is a Fortio duration histogram.
     """
-
     def __init__(self, dur_hist: Dict[str, Any]):
         self.count: int = int(dur_hist["Count"])
         self.max: float = float(dur_hist["Max"])
@@ -463,54 +402,45 @@ class DurationHist:
             DurationSample(sample) for sample in dur_hist["Data"]
         ]
 
-
 class Result:
     """
     Result is the result of a single Fortio run; it contains the result for a single version
     """
-
     def __init__(self, result: Dict[str, Any]):
-        self.duration_histogram: DurationHist = DurationHist(
-            result["DurationHistogram"]
-        )
+        self.duration_histogram: DurationHist = DurationHist(result["DurationHistogram"])
         self.ret_codes: Dict[str, int] = {
             key: int(value) for (key, value) in result["RetCodes"].items()
         }
-
 
 class Builtins:
     """
     Builtins contains results for all versions
     """
-
     def __init__(self, data: Dict[str, Any]):
         self.version_results: Dict[str, Result] = {
             key: Result(value) for (key, value) in data.items()
         }
-
 
 def initialize_builtins(iam: AggregatedMetricsAnalysis):
     """
     Initialize builtin metrics in iam
     """
     for metric_nn in builtin_metrics_nn:
-        iam.data[metric_nn] = AggregatedMetric(data={})
+        iam.data[metric_nn] = AggregatedMetric(data = {})
 
-
-def populate_builtins_for_version(
-    iam: AggregatedMetricsAnalysis, version_name: str, result: Result
-):
+def populate_builtins_for_version(iam: AggregatedMetricsAnalysis, \
+    version_name: str, result: Result):
     """
     Populate builtin metrics in iam for version
     1. Latency values will be converted to milliseconds
     2. Random seed will be fixed to ensure repeatability
     """
     # initialize random state for numpy
-    np.random.seed(17)  # actual number... 17 in this case... is not important
+    np.random.seed(17) # actual number... 17 in this case... is not important
 
     # populate request count
     iam.data["iter8-system/request-count"].data[version_name] = VersionMetric(
-        value=result.duration_histogram.count
+        value = result.duration_histogram.count
     )
 
     # populate error count
@@ -519,24 +449,22 @@ def populate_builtins_for_version(
         if int(key) >= 400:
             error_count += val
     iam.data["iter8-system/error-count"].data[version_name] = VersionMetric(
-        value=error_count
+        value = error_count
     )
 
     # populate error rate
     if result.duration_histogram.count > 0:
         iam.data["iter8-system/error-rate"].data[version_name] = VersionMetric()
-        iam.data["iter8-system/error-rate"].data[version_name].value = float(
-            iam.data["iter8-system/error-count"].data[version_name].value
-        ) / float(iam.data["iter8-system/request-count"].data[version_name].value)
+        iam.data["iter8-system/error-rate"].data[version_name].value = \
+            float(iam.data["iter8-system/error-count"].data[version_name].value) \
+                / float(iam.data["iter8-system/request-count"].data[version_name].value)
 
     # populate mean latency (in msec)
     if result.duration_histogram.count > 0:
         iam.data["iter8-system/mean-latency"].data[version_name] = VersionMetric()
-        iam.data["iter8-system/mean-latency"].data[version_name].value = (
-            1000.0
-            * float(result.duration_histogram.sum)
-            / float(result.duration_histogram.count)
-        )
+        iam.data["iter8-system/mean-latency"].data[version_name].value = \
+            1000.0 * float(result.duration_histogram.sum) \
+                / float(result.duration_histogram.count)
 
     # populate tail latencies
     if result.duration_histogram.count > 0:
@@ -545,10 +473,8 @@ def populate_builtins_for_version(
         for duras in result.duration_histogram.data:
             if duras.count > 0:
                 # 10x random sample
-                npr = np.random.uniform(
-                    1000.0 * duras.start, 1000.0 * duras.end, 10 * duras.count
-                )
-                sample = np.concatenate((sample, npr), axis=None)
+                npr = np.random.uniform(1000.0 * duras.start, 1000.0 * duras.end, 10*duras.count)
+                sample = np.concatenate((sample, npr), axis = None)
         # if sample is not-empty
         # compute and populate tail latencies
         if sample.size > 0:
@@ -557,55 +483,31 @@ def populate_builtins_for_version(
             tail90 = np.percentile(sample, 90)
             tail95 = np.percentile(sample, 95)
             tail99 = np.percentile(sample, 99)
-            iam.data["iter8-system/latency-50th-percentile"].data[
-                version_name
-            ] = VersionMetric()
-            iam.data["iter8-system/latency-50th-percentile"].data[
-                version_name
-            ].value = tail50
-            iam.data["iter8-system/latency-75th-percentile"].data[
-                version_name
-            ] = VersionMetric()
-            iam.data["iter8-system/latency-75th-percentile"].data[
-                version_name
-            ].value = tail75
-            iam.data["iter8-system/latency-90th-percentile"].data[
-                version_name
-            ] = VersionMetric()
-            iam.data["iter8-system/latency-90th-percentile"].data[
-                version_name
-            ].value = tail90
-            iam.data["iter8-system/latency-95th-percentile"].data[
-                version_name
-            ] = VersionMetric()
-            iam.data["iter8-system/latency-95th-percentile"].data[
-                version_name
-            ].value = tail95
-            iam.data["iter8-system/latency-99th-percentile"].data[
-                version_name
-            ] = VersionMetric()
-            iam.data["iter8-system/latency-99th-percentile"].data[
-                version_name
-            ].value = tail99
-
+            iam.data["iter8-system/latency-50th-percentile"].data[version_name] = VersionMetric()
+            iam.data["iter8-system/latency-50th-percentile"].data[version_name].value = tail50
+            iam.data["iter8-system/latency-75th-percentile"].data[version_name] = VersionMetric()
+            iam.data["iter8-system/latency-75th-percentile"].data[version_name].value = tail75
+            iam.data["iter8-system/latency-90th-percentile"].data[version_name] = VersionMetric()
+            iam.data["iter8-system/latency-90th-percentile"].data[version_name].value = tail90
+            iam.data["iter8-system/latency-95th-percentile"].data[version_name] = VersionMetric()
+            iam.data["iter8-system/latency-95th-percentile"].data[version_name].value = tail95
+            iam.data["iter8-system/latency-99th-percentile"].data[version_name] = VersionMetric()
+            iam.data["iter8-system/latency-99th-percentile"].data[version_name].value = tail99
 
 def get_builtin_metrics(expr: ExperimentResource):
     """
     Get built in metrics using experiment resource.
     """
     # initialize aggregated metrics object
-    iam = AggregatedMetricsAnalysis(data={})
-    if (
-        expr.status.analysis is None
-        or expr.status.analysis.aggregated_builtin_hists is None
-    ):
+    iam = AggregatedMetricsAnalysis(data = {})
+    if expr.status.analysis is None or \
+        expr.status.analysis.aggregated_builtin_hists is None:
         return iam
     builtins = Builtins(expr.status.analysis.aggregated_builtin_hists["data"])
     initialize_builtins(iam)
     for version in builtins.version_results:
         populate_builtins_for_version(iam, version, builtins.version_results[version])
     return iam
-
 
 def get_aggregated_metrics(expr: ExperimentResource):
     """
@@ -628,42 +530,30 @@ def get_aggregated_metrics(expr: ExperimentResource):
 
     for metric_info in expr.status.metrics:
         # only custom metrics is handled below... not builtin metrics
-        if (
-            metric_info.metricObj.spec.provider is None
-            or metric_info.metricObj.spec.provider != "iter8"
-        ):
-            iam.data[metric_info.name] = AggregatedMetric(data={})
+        if metric_info.metricObj.spec.provider is None or \
+            metric_info.metricObj.spec.provider != "iter8":
+            iam.data[metric_info.name] = AggregatedMetric(data = {})
             # fetch the metric value for each version...
             for version in versions:
                 # initialize metric object for this version...
                 iam.data[metric_info.name].data[version.name] = VersionMetric()
-                val, err = get_metric_value(
-                    metric_info.metricObj, version, expr.status.startTime
-                )
+                val, err = get_metric_value(metric_info.metricObj, version, \
+                expr.status.startTime)
+                version_metric = iam.data[metric_info.name].data[version.name]
                 if err is None and val is not None:
-                    version_metric = iam.data[metric_info.name].data[version.name]
                     version_metric.value = val
-                    version_metric.history.append((datetime.now(pytz.utc), val))
                 else:
                     try:
-                        val = float(
-                            expr.status.analysis.aggregated_metrics.data[
-                                metric_info.name
-                            ]
-                            .data[version.name]
-                            .value
-                        )
+                        val = float(expr.status.analysis.aggregated_metrics.data\
+                            [metric_info.name].data[version.name].value)
                     except AttributeError:
                         val = None
-                    iam.data[metric_info.name].data[version.name].value = val
+                    version_metric.value = val
+                version_metric.history.append((datetime.now(pytz.utc), val))
                 if err is not None:
-                    messages.append(
-                        Message(
-                            MessageLevel.ERROR,
-                            f"Error from metrics backend for metric: {metric_info.name} \
-                            and version: {version.name}",
-                        )
-                    )
+                    messages.append(Message(MessageLevel.ERROR, \
+                        f"Error from metrics backend for metric: {metric_info.name} \
+                            and version: {version.name}"))
 
     iam.message = Message.join_messages(messages)
     logger.debug("Analysis object after metrics collection")
