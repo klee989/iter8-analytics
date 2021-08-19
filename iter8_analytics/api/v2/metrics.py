@@ -1,43 +1,31 @@
 """
 Module containing classes and methods for querying prometheus and returning metric data.
 """
+# core python dependencies
+from datetime import datetime, timezone
+import logging
+from string import Template
+from typing import Sequence, Dict, Any
+import numbers
+import pprint
 import base64
 import binascii
 import json
-import logging
-import numbers
-import pprint
-
-# core python dependencies
-from datetime import datetime, timezone
-from string import Template
-from typing import Any, Dict, Sequence
-
-import jq
-import numpy as np
-import pytz
 
 # external module dependencies
 import requests
-from cachetools import TTLCache, cached
+from requests.auth import HTTPBasicAuth
+import numpy as np
+import jq
+from cachetools import cached, TTLCache
 from kubernetes import client as kubeclient
 from kubernetes import config as kubeconfig
-from requests.auth import HTTPBasicAuth
-
-from iter8_analytics.api.utils import Message, MessageLevel
 
 # iter8 dependencies
-from iter8_analytics.api.v2.types import (
-    AggregatedMetric,
-    AggregatedMetricsAnalysis,
-    AuthType,
-    ExperimentResource,
-    Method,
-    MetricResource,
-    MetricType,
-    VersionDetail,
-    VersionMetric,
-)
+from iter8_analytics.api.v2.types import AggregatedMetricsAnalysis, ExperimentResource, \
+    MetricResource, VersionDetail, AggregatedMetric, VersionMetric, MetricType, \
+    AuthType, Method
+from iter8_analytics.api.utils import Message, MessageLevel
 
 logger = logging.getLogger("iter8_analytics")
 
