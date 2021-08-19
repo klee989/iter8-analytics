@@ -1,36 +1,51 @@
 """Tests for module iter8_analytics.api.v2"""
 # standard python stuff
-import logging
-import json
-import os
 import copy
+import json
+import logging
+import os
 
 # python libraries
 import requests_mock
 from fastapi import HTTPException
 
-from iter8_analytics import fastapi_app
-from iter8_analytics.api.v2.types import \
-    ExperimentResource, AggregatedMetricsAnalysis, VersionAssessmentsAnalysis, \
-    WinnerAssessmentAnalysis, WeightsAnalysis, VersionWeight
-from iter8_analytics.config import env_config
 import iter8_analytics.constants as constants
-from iter8_analytics.api.v2.examples.examples_canary import \
-    er_example, er_example_step1, er_example_step2, er_example_step3, \
-    am_response, va_response, wa_response, w_response
-
-from iter8_analytics.api.v2.examples.examples_ab import \
-    ab_er_example, ab_er_example_step1, ab_er_example_step2, ab_er_example_step3, \
-    ab_am_response, ab_va_response, ab_wa_response, ab_w_response
-
-from iter8_analytics.api.v2.examples.examples_abn import \
-    abn_er_example, abn_er_example_step1, abn_er_example_step2, abn_er_example_step3, \
-    abn_am_response, abn_va_response, abn_wa_response, abn_w_response
-
+from iter8_analytics import fastapi_app
+from iter8_analytics.api.v2.examples.examples_ab import (ab_am_response,
+                                                         ab_er_example,
+                                                         ab_er_example_step1,
+                                                         ab_er_example_step2,
+                                                         ab_er_example_step3,
+                                                         ab_va_response,
+                                                         ab_w_response,
+                                                         ab_wa_response)
+from iter8_analytics.api.v2.examples.examples_abn import (abn_am_response,
+                                                          abn_er_example,
+                                                          abn_er_example_step1,
+                                                          abn_er_example_step2,
+                                                          abn_er_example_step3,
+                                                          abn_va_response,
+                                                          abn_w_response,
+                                                          abn_wa_response)
+from iter8_analytics.api.v2.examples.examples_canary import (am_response,
+                                                             er_example,
+                                                             er_example_step1,
+                                                             er_example_step2,
+                                                             er_example_step3,
+                                                             va_response,
+                                                             w_response,
+                                                             wa_response)
+from iter8_analytics.api.v2.experiment import (get_analytics_results,
+                                               get_version_assessments,
+                                               get_weights,
+                                               get_winner_assessment)
 from iter8_analytics.api.v2.metrics import get_aggregated_metrics
-from iter8_analytics.api.v2.experiment import get_version_assessments, get_winner_assessment, \
-    get_weights, get_analytics_results
-
+from iter8_analytics.api.v2.types import (AggregatedMetricsAnalysis,
+                                          ExperimentResource,
+                                          VersionAssessmentsAnalysis,
+                                          VersionWeight, WeightsAnalysis,
+                                          WinnerAssessmentAnalysis)
+from iter8_analytics.config import env_config
 
 logger = logging.getLogger('iter8_analytics')
 if not logger.hasHandlers():
@@ -177,14 +192,16 @@ class TestExperiment:
                             "max": None,
                             "min": None,
                             "sampleSize": None,
-                            "value": None
+                            "value": None,
+                            "history": []
                         },
                         "canary": {
                             "max": None,
                             "min": None,
                             "sampleSize": None,
-                            "value": None
-                        }
+                            "value": None,
+                            "history": []
+                        },
                     }
                 },
                 "mean-latency": {
@@ -195,14 +212,16 @@ class TestExperiment:
                             "max": None,
                             "min": None,
                             "sampleSize": None,
-                            "value": None
+                            "value": None,
+                            "history": []
                         },
                         "canary": {
                             "max": None,
                             "min": None,
                             "sampleSize": None,
-                            "value": None
-                        }
+                            "value": None,
+                            "history": []
+                        },
                     }
                 }
             }

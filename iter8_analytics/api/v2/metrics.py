@@ -2,27 +2,30 @@
 Module containing classes and methods for querying prometheus and returning metric data.
 """
 # core python dependencies
-from datetime import datetime, timezone
-import logging
-from string import Template
-import numbers
-import pprint
 import base64
 import binascii
 import json
+import logging
+import numbers
+import pprint
+from datetime import datetime, timezone
+from string import Template
 
 # external module dependencies
-import requests
-import numpy as np
 import jq
-from cachetools import cached, TTLCache
+import numpy as np
+import pytz
+import requests
+from cachetools import TTLCache, cached
 from kubernetes import client as kubeclient
 from kubernetes import config as kubeconfig
 
 # iter8 dependencies
-from iter8_analytics.api.v2.types import AggregatedMetricsAnalysis, ExperimentResource, \
-    MetricResource, VersionDetail, AggregatedMetric, VersionMetric
 from iter8_analytics.api.utils import Message, MessageLevel
+from iter8_analytics.api.v2.types import (AggregatedMetric,
+                                          AggregatedMetricsAnalysis,
+                                          ExperimentResource, MetricResource,
+                                          VersionDetail, VersionMetric)
 
 logger = logging.getLogger('iter8_analytics')
 
@@ -219,7 +222,9 @@ def get_aggregated_metrics(expr: ExperimentResource):
                 val, err = get_metric_value(metric_resource.metricObj, version, \
                 expr.status.startTime)
                 if err is None:
-                    iam.data[metric_resource.name].data[version.name].value = val
+                    version_metric = iam.data[metric_resource.name].data[version.name]
+                    version_metric.value = val
+                    version_metric.history.append((datetime.now(pytz.utc), val))
                 else:
                     messages.append(Message(MessageLevel.error, \
                         f"Error from metrics backend for metric: {metric_resource.name} \
