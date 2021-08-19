@@ -2,51 +2,13 @@
 Examples used in FastAPI/Swagger documentation of iter8 analytics v2 APIs.
 Examples used in tests of iter8 analytics v2 APIs.
 """
-mr_example = [{
-    "name": "request-count",
-    "metricObj": {
-        "apiVersion": "core.iter8.tools/v2alpha2",
-        "kind": "Metric",
-        "metadata": {
-            "name": "request-count"
-        },
-        "spec": {
-            "params": [{
-                "name": "query",
-                "value": "sum(increase(revision_app_request_latencies_count{service_name=~'.*$name'}[$elapsedTime])) or on() vector(0)"
-            }],
-            "description": "Number of requests",
-            "type": "counter",
-            "provider": "prometheus",
-            "jqExpression": ".data.result[0].value[1] | tonumber",
-            "urlTemplate": "http://metrics-mock:8080/promcounter"
-        }
-    }},
-    {
-    "name":"mean-latency",
-    "metricObj": {
-        "apiVersion": "core.iter8.tools/v2alpha2",
-        "kind": "Metric",
-        "metadata": {
-            "name": "mean-latency"
-        },
-        "spec": {
-            "description": "Mean latency",
-            "units": "milliseconds",
-            "params": [{
-                "name": "query",
-                "value": "(sum(increase(revision_app_request_latencies_sum{service_name=~'.*$name'}[$elapsedTime]))or on() vector(0)) / (sum(increase(revision_app_request_latencies_count{service_name=~'.*$name'}[$elapsedTime])) or on() vector(0))"
-            }],
-            "type": "gauge",
-            "sampleSize": {
-                "name": "request-count"
-            },
-            "provider": "prometheus",
-            "jqExpression": ".data.result[0].value[1] | tonumber",
-            "urlTemplate": "http://metrics-mock:8080/promcounter"
-        }
-    }}
-]
+# iter8 dependencies
+from iter8_analytics.api.v2.examples.examples_metrics import \
+    request_count, mean_latency, mocked_request_count, mocked_mean_latency
+
+
+mr_example = [request_count, mean_latency]
+mocked_mr_example = [mocked_request_count, mocked_mean_latency]
 
 er_example = {
     "spec": {
@@ -89,20 +51,20 @@ am_response = {
         "request-count": {
             "data": {
                 "default": {
-                    "value": 148.0405378277749
+                    "value": '148.0405378277749'
                 },
                 "canary": {
-                    "value": 143.03538837774244
+                    "value": '143.03538837774244'
                 }
             }
         },
         "mean-latency": {
             "data": {
                 "default": {
-                    "value": 419.2027282381035
+                    "value": '419.2027282381035'
                 },
                 "canary": {
-                    "value": 426.9510489510489
+                    "value": '426.9510489510489'
                 }
             }
         }

@@ -1,73 +1,13 @@
-ab_mr_example = [{
-    "name": "request-count",
-    "metricObj": {
-        "apiVersion": "core.iter8.tools/v1alpha3",
-        "kind": "Metric",
-        "metadata": {
-            "name": "request-count"
-        },
-        "spec": {
-            "params": [{
-                "name": "query",
-                "value": "sum(increase(revision_app_request_latencies_count{service_name=~'.*$name'}[$elapsedTime])) or on() vector(0)"
-            }],
-            "description": "Number of requests",
-            "type": "counter",
-            "provider": "prometheus",
-            "jqExpression": ".data.result[0].value[1] | tonumber",
-            "urlTemplate": "http://prometheus-operated.iter8-monitoring:9090/api/v1/query"
-        }
-    }},
-    {
-    "name":"mean-latency",
-    "metricObj": {
-        "apiVersion": "core.iter8.tools/v1alpha3",
-        "kind": "Metric",
-        "metadata": {
-            "name": "mean-latency"
-        },
-        "spec": {
-            "description": "Mean latency",
-            "units": "milliseconds",
-            "params": [{
-                "name": "query",
-                "value": "(sum(increase(revision_app_request_latencies_sum{service_name=~'.*$name'}[$elapsedTime]))or on() vector(0)) / (sum(increase(revision_app_request_latencies_count{service_name=~'.*$name'}[$elapsedTime])) or on() vector(0))"
-            }],
-            "type": "gauge",
-            "sampleSize": {
-                "name": "request-count"
-            },
-            "provider": "prometheus",
-            "jqExpression": ".data.result[0].value[1] | tonumber",
-            "urlTemplate": "http://prometheus-operated.iter8-monitoring:9090/api/v1/query"
-        }
-    }},
-    {
-    "name":"business-revenue",
-    "metricObj": {
-        "apiVersion": "core.iter8.tools/v1alpha3",
-        "kind": "Metric",
-        "metadata": {
-            "name": "business-revenue"
-        },
-        "spec": {
-            "description": "Business Revenue Metric",
-            "units": "dollars",
-            "params": [{
-                "name": "query",
-                "value": "(sum(increase(business_revenue{service_name=~'.*$name'}[$elapsedTime]))or on() vector(0)) / (sum(increase(revision_app_request_latencies_count{service_name=~'.*$name'}[$elapsedTime])) or on() vector(0))"
-            }],
-            "type": "gauge",
-            "sampleSize": {
-                "name": "request-count"
-            },
-            "provider": "prometheus",
-            "jqExpression": ".data.result[0].value[1] | tonumber",
-            "urlTemplate": "http://prometheus-operated.iter8-monitoring:9090/api/v1/query"
-        }
-    }}
-]
-    
+"""
+Examples used in A/B tests of iter8 analytics v2 APIs.
+"""
+
+# iter8 dependencies
+from iter8_analytics.api.v2.examples.examples_metrics import \
+    request_count, mean_latency, business_revenue
+
+ab_mr_example = [request_count, mean_latency, business_revenue]
+
 ab_er_example = {
     "spec": {
         "strategy": {
@@ -106,7 +46,6 @@ ab_er_example = {
         "startTime": "2020-04-03T12:55:50.568Z",
         "metrics": ab_mr_example
     },
-    
 }
 
 ab_am_response = {
@@ -114,30 +53,30 @@ ab_am_response = {
         "request-count": {
             "data": {
                 "default": {
-                    "value": 148.0405378277749
+                    "value": '148.0405378277749'
                 },
                 "canary": {
-                    "value": 143.03538837774244
+                    "value": '143.03538837774244'
                 }
             }
         },
         "mean-latency": {
             "data": {
                 "default": {
-                    "value": 419.2027282381035
+                    "value": '419.2027282381035'
                 },
                 "canary": {
-                    "value": 412.9510489510489
+                    "value": '412.9510489510489'
                 }
             }
         },
         "business-revenue": {
             "data": {
                 "default": {
-                    "value": 323.32
+                    "value": '323.32'
                 },
                 "canary": {
-                    "value": 2343.2343
+                    "value": '2343.2343'
                 }
             }
         }

@@ -2,6 +2,7 @@
 Module containing pydantic data models for iter8 v2
 """
 # core python dependencies
+from typing import MutableSequence, Sequence, Dict, Union, Any
 from datetime import datetime
 from enum import Enum
 from typing import Dict, Sequence, Tuple, Union
@@ -25,23 +26,90 @@ class NamedValue(BaseModel):
 
 #### Metrics
 
+class NamedLevel(BaseModel):
+    """
+    Pydantic model for version-level pair used in mocking metrics.
+    For complete documentation, see: https://github.com/iter8-tools/etc3/blob/1f747f07de7008895717c415dac9173b57374afa/api/v2alpha2/metric_types.go#L76
+
+    NamedLevel contains the name of a version and the level of the version to be used in mock metric generation.
+
+    The semantics of level are the following:
+    ---
+    If the metric is a counter, if level is x, and time elapsed since the start of the experiment is y, then x*y is the metric value.
+    Note: this will keep increasing over time as counters do.
+    If the metric is gauge, if level is x, the metric value is a random value with mean x.
+    Note: due to randomness, this stay around x but can go up or down as a gauges do.
+    """
+    name: str = Field(..., description = "name of the version")
+    level: PolymorphicQuantity = Field(..., description = "level of the version")
+
+    def convert_to_float(self):
+        """
+        Apply convert_to_float on level
+        """
+        self.level = convert_to_float(self.level)
+        return self
+
+class AuthType(str, Enum):
+    """
+    Types of authentication used in the HTTP(S) request to the metrics API endpoint.
+    """
+    BASIC = "Basic"
+    BEARER = "Bearer"
+    APIKEY = "APIKey"
+
+class Method(str, Enum):
+    """
+    The request method (aka verb) used in the HTTP(s) request to the metrics API endpoint.
+    """
+    GET = "GET"
+    POST = "POST"
+
+class MetricType(str, Enum):
+    """
+    Is the metric type counter or gauge
+    """
+    Counter = "Counter"
+    Gauge = "Gauge"
+
 class MetricSpec(BaseModel):
     """
     Pydantic model for metric spec subresource
     """
     params: Sequence[NamedValue] = Field(None, description = "parameters to be used \
         as part of the REST query for this metric")
-    provider: str = Field(None, description = "identifier for the metrics backend")
-    jqExpression: str = Field(..., \
-        description = "jq expression used for unmarshaling metric value from the JSON response body of the metrics backend's REST API")
-    urlTemplate: str = Field(..., \
-        description="template of the URL to be used for querying this metric")
+    jqExpression: str = Field(None, \
+        description = "jq expression used for unmarshaling metric value from \
+            the JSON response body of the metrics backend's REST API")
+    urlTemplate: str = Field(None, description = \
+        "template of the URL to be used for querying this metric")
+    type: MetricType = Field(MetricType.Gauge, description = "counter or gauge")
+    authType: AuthType = Field(None, description = \
+        "type of authentication used in the HTTP(S) request to the metrics API endpoint")
+    method: Method = Field(Method.GET, description = \
+        "HTTP method used in the HTTP(S) request to the metrics API endpoint")
     secret: str = Field(None, description="k8s secret reference in the namespace/name format")
+    body: str = Field(None, description="body of the HTTP(S) request; \
+        this field is relevant only if method is POST")
     headerTemplates: Sequence[NamedValue] = Field(None, \
         description = "headerTemplates are field names \
         and value templates for headers that should be passed to the metrics backend; \
         typically, these are authentication headers; \
         values are interpolated using secret data")
+    provider: str = Field(None, \
+        description = "provider field is used to \
+        disambiguate between builtin metrics and custom metrics")
+    mock: Sequence[NamedLevel] = Field(None, \
+        description = "information needed for mocking this metric")
+
+    def convert_to_float(self):
+        """
+        Apply convert_to_float for each version levvel
+        """
+        if self.mock is not None:
+            for named_level in self.mock:
+                named_level.convert_to_float()
+        return self
 
 class MetricResource(BaseModel):
     """
@@ -86,23 +154,25 @@ class Objective(BaseModel):
     Pydantic model for experiment objective
     """
     metric: str = Field(..., description = "metric name")
-    upperLimit: PolymorphicQuantity = Field(None, description = "upper limit for the metric")
-    lowerLimit: PolymorphicQuantity = Field(None, description = "lower limit for the metric")
+    upper_limit: PolymorphicQuantity = Field(None, \
+        description = "upper limit for the metric", alias = "upperLimit")
+    lower_limit: PolymorphicQuantity = Field(None, \
+        description = "lower limit for the metric", alias = "lowerLimit")
 
     def convert_to_float(self):
         """
         Apply convert_to_float on upper and lower limits
         """
-        self.upperLimit = convert_to_float(self.upperLimit)
-        self.lowerLimit = convert_to_float(self.lowerLimit)
+        self.upper_limit = convert_to_float(self.upper_limit)
+        self.lower_limit = convert_to_float(self.lower_limit)
         return self
 
     def convert_to_quantity(self):
         """
         Apply convert_to_quantity on upper and lower limits
         """
-        self.upperLimit = convert_to_quantity(self.upperLimit)
-        self.lowerLimit = convert_to_quantity(self.lowerLimit)
+        self.upper_limit = convert_to_quantity(self.upper_limit)
+        self.lower_limit = convert_to_quantity(self.lower_limit)
         return self
 
 class Criteria(BaseModel):
@@ -110,7 +180,8 @@ class Criteria(BaseModel):
     Pydantic model for Criteria field in experiment spec
     """
     rewards: Sequence[Reward] = Field(None, description = "sequence of rewards")
-    objectives: Sequence[Objective] = Field(None, description = "sequence of metric-based objectives")
+    objectives: Sequence[Objective] = Field(None, \
+        description = "sequence of metric-based objectives")
 
     def convert_to_float(self):
         """
@@ -132,10 +203,10 @@ class TestingPattern(str, Enum):
     """
     Experiment testing patterns
     """
-    canary = "Canary"
-    ab = "A/B"
-    abn = "A/B/N"
-    conformance = "Conformance"
+    CANARY = "Canary"
+    AB = "A/B"
+    ABN = "A/B/N"
+    CONFORMANCE = "Conformance"
 
 class WeightsConfig(BaseModel):
     """
@@ -196,11 +267,11 @@ class VersionMetric(BaseModel):
         for this metric for this version")
     value: PolymorphicQuantity = Field(None, description = "last observed value \
         for this metric for this version")
-    sampleSize: PolymorphicQuantity = Field(None, description = "last observed value \
-        for the sampleSize metric for this version; this is none if sampleSize is not specified")
+    sample_size: PolymorphicQuantity = Field(None, description = "last observed value \
+        for the sampleSize metric for this version; \
+equals None if sampleSize is not specified", alias = "sampleSize")
     history: Sequence[Tuple[datetime, PolymorphicQuantity]] = Field(default_factory=list, \
         description = "history of all past observed values for this metric for this version")
-
 
     def convert_to_float(self):
         """
@@ -209,7 +280,7 @@ class VersionMetric(BaseModel):
         self.max = convert_to_float(self.max)
         self.min = convert_to_float(self.min)
         self.value = convert_to_float(self.value)
-        self.sampleSize = convert_to_float(self.sampleSize)
+        self.sample_size = convert_to_float(self.sample_size)
         self.history = [(dt, convert_to_float(value)) for dt, value in self.history]
         return self
 
@@ -220,7 +291,7 @@ class VersionMetric(BaseModel):
         self.max = convert_to_quantity(self.max)
         self.min = convert_to_quantity(self.min)
         self.value = convert_to_quantity(self.value)
-        self.sampleSize = convert_to_quantity(self.sampleSize)
+        self.sample_size = convert_to_quantity(self.sample_size)
         self.history = [(dt, convert_to_quantity(value)) for dt, value in self.history]
         return self
 
@@ -282,8 +353,10 @@ class VersionAssessmentsAnalysis(BaseModel):
     """
     Pydantic model for version assessments
     """
-    data: Dict[str, Sequence[bool]] = Field(..., \
-    description = "dictionary with version name as key and sequence of booleans as value; each element of the sequence indicates if the version satisfies the corresponding objective.")
+    data: Dict[str, MutableSequence[bool]] = Field(..., \
+    description = "dictionary with version name as key and \
+        sequence of booleans as value; each element of the sequence indicates if \
+        the version satisfies the corresponding objective.")
     message: str = Field(None, description = "human-readable description of version assessments")
 
 class WinnerAssessmentData(BaseModel):
@@ -292,7 +365,10 @@ class WinnerAssessmentData(BaseModel):
     """
     winnerFound: bool = Field(False, description = "boolean value indicating if winner is found")
     winner: str = Field(None, description = "winning version; None if winner not found")
-    bestVersions: Sequence[str] = Field([], description = "the list of best versions found; if this list is a singleton, then winnerFound = true and winner is the only element of the list")
+    bestVersions: Sequence[str] = Field([], \
+        description = "the list of best versions found; \
+        if this list is a singleton, then winnerFound = true \
+        and winner is the only element of the list")
 
 class WinnerAssessmentAnalysis(BaseModel):
     """
@@ -322,28 +398,30 @@ class Analysis(BaseModel):
     """
     Pydantic model for analysis section of experiment status
     """
-    aggregatedMetrics: AggregatedMetricsAnalysis = Field(None, \
-        description = "aggregated metrics")
-    versionAssessments: VersionAssessmentsAnalysis = Field(None, \
-        description = "version assessments")
-    winnerAssessment: WinnerAssessmentAnalysis = Field(None, \
-        description = "winner assessment")
+    aggregated_builtin_hists: Any = Field(None, \
+        description = "aggregated builtin metric histograms", alias = "aggregatedBuiltinHists")
+    aggregated_metrics: AggregatedMetricsAnalysis = Field(None, \
+        description = "aggregated metrics", alias = "aggregatedMetrics")
+    version_assessments: VersionAssessmentsAnalysis = Field(None, \
+        description = "version assessments", alias = "versionAssessments")
+    winner_assessment: WinnerAssessmentAnalysis = Field(None, \
+        description = "winner assessment", alias = "winnerAssessment")
     weights: WeightsAnalysis = Field(None, description = "weight recommendations")
 
     def convert_to_float(self):
         """
         Apply convert_to_float on aggregatedMetric
         """
-        if self.aggregatedMetrics is not None:
-            self.aggregatedMetrics = self.aggregatedMetrics.convert_to_float()
+        if self.aggregated_metrics is not None:
+            self.aggregated_metrics = self.aggregated_metrics.convert_to_float()
         return self
 
     def convert_to_quantity(self):
         """
         Apply convert_to_quantiy on aggregatedMetric
         """
-        if self.aggregatedMetrics is not None:
-            self.aggregatedMetrics = self.aggregatedMetrics.convert_to_quantity()
+        if self.aggregated_metrics is not None:
+            self.aggregated_metrics = self.aggregated_metrics.convert_to_quantity()
         return self
 
 class ExperimentStatus(BaseModel):
